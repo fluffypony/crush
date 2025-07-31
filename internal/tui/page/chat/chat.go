@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -327,6 +328,8 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, p.keyMap.Details):
 			p.toggleDetails()
 			return p, nil
+		case key.Matches(msg, p.keyMap.CopyLastResponse):
+			return p, p.copyLastResponse()
 		}
 
 		switch p.focusedPane {
@@ -941,6 +944,38 @@ func (p *chatPage) Help() help.KeyMap {
 	}
 
 	return core.NewSimpleHelp(shortList, fullList)
+}
+
+func (p *chatPage) copyLastResponse() tea.Cmd {
+	// Check if session is active
+	if p.session.ID == "" {
+		return util.ReportWarn("No active session")
+	}
+
+	// Get messages from current session
+	messages, err := p.app.Messages.List(context.Background(), p.session.ID)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	// Find the latest assistant message with text content
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role == message.Assistant {
+			textContent := msg.Content().Text
+			if textContent != "" {
+				// Copy to clipboard
+				err := clipboard.WriteAll(textContent)
+				if err != nil {
+					return util.ReportError(err)
+				}
+				return util.ReportInfo("Response copied to clipboard")
+			}
+		}
+	}
+
+	// No assistant messages with text content found
+	return util.ReportWarn("No response to copy")
 }
 
 func (p *chatPage) IsChatFocused() bool {
